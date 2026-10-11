@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 
@@ -62,6 +63,46 @@ def prepare(path: Path, paragraph_after: float) -> tuple[float, list[tuple[bool,
     return wav.shape[0] / SAMPLE_RATE, chunk(segments, paragraph_after)
 
 
+async def transcribe_chunks(chunks: list[tuple[bool, np.ndarray]], language: Optional[str], context: str,
+                            pieces: list[list], first_paragraph: bool = False):
+    """Transcribe chunks in order, appending [starts_paragraph, raw_text] to `pieces`.
+
+    Each chunk is decoded together with the previous chunk's audio, with the previous text
+    (minus its final punctuation) forced as the start of the answer. The model then hears
+    the speech continue and decides the punctuation at the seam itself, instead of ending
+    every chunk with a period (and closing any open quote) because its audio stopped.
+    Yields after each chunk.
+    """
+    prev_audio = None
+    for j, (paragraph, audio) in enumerate(chunks):
+        paragraph = paragraph or (j == 0 and first_paragraph)
+        body = None
+        if prev_audio is not None and not paragraph and language:
+            stem, _ = textutil.split_tail(pieces[-1][1])
+            if stem:
+                _, _, raw = await engine.transcribe(
+                    np.concatenate([prev_audio, audio]), language, context, PRIORITY_FILE,
+                    continue_from=stem, new_s=audio.shape[0] / SAMPLE_RATE, rollback=0)
+                if raw.startswith(stem):
+                    lead, body = textutil.split_lead(raw[len(stem):])
+                    pieces[-1][1] = stem + lead
+        if body is None:
+            detected, body, _ = await engine.transcribe(audio, language, context, PRIORITY_FILE)
+            # continuation needs a fixed language; with auto-detect, keep what was detected
+            language = language or detected or None
+        pieces.append([paragraph, body.strip()])
+        prev_audio = audio
+        yield
+
+
+def render(pieces: list[list], fillers: bool) -> str:
+    text = ""
+    for paragraph, raw in pieces:
+        text = textutil.join(text, raw, paragraph)
+    # cleaned as a whole, so stutters and quotes that cross chunk seams are handled too
+    return textutil.repair_quotes(textutil.clean(text, fillers))
+
+
 class FileJobs:
     def __init__(self):
         self.queue: asyncio.Queue = asyncio.Queue()
@@ -112,15 +153,12 @@ class FileJobs:
         db.update_session(sid, duration=total)
 
         count = sum(len(p) for p in parts) or 1
-        text, done = "", 0
+        pieces: list[list] = []  # [starts_paragraph, raw text] per chunk
         for i, chunks in enumerate(parts):
-            for j, (paragraph, audio) in enumerate(chunks):
-                _, t, _ = await engine.transcribe(audio, language, context, PRIORITY_FILE)
-                # separate recordings (e.g. several live takes) become separate paragraphs
-                text = textutil.join(text, textutil.clean(t, fillers), paragraph or (j == 0 and i > 0))
-                done += 1
-                db.update_session(sid, text=text, progress=done / count)
-        db.update_session(sid, text=text, status="done", progress=None)
+            # separate recordings (e.g. several live takes) become separate paragraphs
+            async for _ in transcribe_chunks(chunks, language, context, pieces, first_paragraph=i > 0):
+                db.update_session(sid, text=render(pieces, fillers), progress=len(pieces) / count)
+        db.update_session(sid, text=render(pieces, fillers), status="done", progress=None)
 
         if not settings["keep_audio"] and session["kind"] == "file":
             delete_audio(sid)

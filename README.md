@@ -40,7 +40,8 @@ Double-click **`start.bat`**. It loads the model (~10 s) and opens http://127.0.
 - `app/segmenter.py`: Silero VAD splits audio at pauses. File uploads use a batched pass that is 6× faster.
 - `app/live.py`: live dictation over a WebSocket. Utterances are grouped into ~40–55 s windows. At each pause the window is re-read, with its earlier transcript forced as the start of the answer, so a sentence spanning a thinking pause comes out whole and only the new part is decoded.
 - `app/files.py`: file jobs. Speech is grouped into 40–60 s chunks, cut at the longest pause.
-- `app/textutil.py`: filler and stutter cleanup, and sentence repair where separately transcribed pieces meet.
+- **Seams**: when a piece of audio ends, the model ends its text as if the speech had stopped. It adds a period and closes any open quote, which leads to sentences like *"which is essentially. Funneling into…"*. So each chunk (and each new live window) is decoded together with the previous one, forcing the previous text minus its final punctuation. The model then punctuates the seam knowing what comes next.
+- `app/textutil.py`: filler and stutter cleanup. It also repairs quotation marks: speech has no audible closing quote, so a quote the model never closes, or one that runs implausibly long, loses its marks instead of swallowing the narration that follows.
 - `web/`: the UI, plain HTML/CSS/JS with no build step. `worklet.js` captures 16 kHz PCM from the mic.
 
 ## Folders
@@ -57,7 +58,7 @@ Deleting the project folder removes everything. Nothing is installed outside it.
 ## Notes
 
 - **Serbian is not supported** by Qwen3-ASR. The language list in the app is what the model supports (30 languages, plus auto-detect).
-- The vocabulary setting is passed to the model as context. Keep it to a short list of terms: long text there can leak into the transcript.
+- The vocabulary setting is passed to the model as context. It fixes spellings of names and jargon (e.g. "tepesquite" became "Tepezcohuite" once that word was listed), but keep it to a short list of terms: long text there can leak into the transcript.
 - The server listens on `127.0.0.1` only, and rejects writes coming from other websites.
 - Environment variables: `QT_PORT` (default 8765), `QT_DATA_DIR`, `QT_MODEL_PATH`.
 - Linux should work too (`env/bin/python -m app`; it falls back to the system `ffmpeg`), but it's untested.

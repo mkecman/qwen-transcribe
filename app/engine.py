@@ -215,7 +215,8 @@ class Engine:
         return ""
 
     def _transcribe(self, wav: np.ndarray, language: Optional[str], context: str,
-                    continue_from: str = "", new_s: Optional[float] = None) -> tuple[str, str, str]:
+                    continue_from: str = "", new_s: Optional[float] = None,
+                    rollback: int = 5) -> tuple[str, str, str]:
         from qwen_asr.inference.utils import detect_and_fix_repetitions, parse_asr_output
 
         language = language if language in self.languages else None
@@ -223,15 +224,17 @@ class Engine:
         if wav.shape[0] < SAMPLE_RATE // 2:
             wav = np.pad(wav, (0, SAMPLE_RATE // 2 - wav.shape[0]))
         if self.decoder is not None:
-            # Continuing: the earlier transcript (minus its tail) is forced as the start of the
-            # answer, so only the new audio has to be decoded.
-            prefix = self._rollback(continue_from) if continue_from else ""
+            # Continuing: the earlier transcript (minus its last `rollback` tokens) is forced as
+            # the start of the answer, so only the new audio has to be decoded.
+            prefix = ""
+            if continue_from:
+                prefix = self._rollback(continue_from, rollback) if rollback else continue_from
             seconds = new_s if prefix and new_s is not None else wav.shape[0] / SAMPLE_RATE
             # Generous token budget, but bounded so a repetition loop can't run long.
             max_new = int(min(768, (48 if prefix else 32) + max(0.0, seconds) * 10))
             try:
                 generated = self.decoder.generate(wav, self._prompt(context, language) + prefix, max_new)
-                raw = detect_and_fix_repetitions(prefix + generated)
+                raw = prefix + detect_and_fix_repetitions(generated)  # raw[len(prefix):] is new
                 lang, text = parse_asr_output(raw, user_language=language)
                 return lang, text.strip(), raw
             except PromptTooLong:
@@ -247,10 +250,11 @@ class Engine:
 
     async def transcribe(self, wav: np.ndarray, language: Optional[str] = "English", context: str = "",
                          priority: int = PRIORITY_FINAL, continue_from: str = "",
-                         new_s: Optional[float] = None) -> tuple[str, str, str]:
+                         new_s: Optional[float] = None, rollback: int = 5) -> tuple[str, str, str]:
         """Returns (detected_language, text, raw). Pass a previous `raw` as `continue_from`
-        when `wav` extends the audio it was transcribed from."""
-        fut = self.submit(priority, self._transcribe, wav, language, context, continue_from, new_s)
+        when `wav` extends the audio it was transcribed from; with `rollback=0` it is forced
+        verbatim and `raw[len(continue_from):]` is the newly decoded text."""
+        fut = self.submit(priority, self._transcribe, wav, language, context, continue_from, new_s, rollback)
         return await asyncio.wrap_future(fut)
 
     def info(self) -> dict:
