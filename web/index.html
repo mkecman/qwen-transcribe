@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Transcribe</title>
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="/static/icon.svg" alt="" width="26" height="26">
+      <div><div class="brand-name">Transcribe</div><div class="brand-sub">Qwen3-ASR · local</div></div>
+    </div>
+    <div class="side-actions">
+      <button id="new-btn" class="btn primary" title="New recording"><i data-icon="plus"></i>New recording</button>
+      <button id="upload-btn" class="btn icon-only" title="Upload audio files"><i data-icon="upload"></i></button>
+      <input id="file-input" type="file" accept="audio/*,video/*,.mp3,.m4a,.wav,.ogg,.opus,.flac,.webm,.mp4" multiple hidden>
+    </div>
+    <label class="search">
+      <i data-icon="search"></i>
+      <input id="search" type="search" placeholder="Search transcripts" autocomplete="off">
+    </label>
+    <nav id="history" class="history" aria-label="History"></nav>
+    <footer class="side-foot">
+      <div id="status" class="status"><span class="dot"></span><span class="status-text">Connecting…</span></div>
+      <button id="settings-btn" class="icon-btn" title="Settings"><i data-icon="settings"></i></button>
+    </footer>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="heading">
+        <input id="title" class="title" placeholder="New recording" spellcheck="false" autocomplete="off">
+        <div id="meta" class="meta"></div>
+      </div>
+      <div class="top-actions">
+        <button id="copy-btn" class="btn" title="Copy transcript"><i data-icon="copy"></i><span>Copy</span></button>
+        <div class="menu-wrap">
+          <button id="more-btn" class="icon-btn" title="More"><i data-icon="more"></i></button>
+          <div id="more-menu" class="menu" hidden>
+            <button data-action="download"><i data-icon="download"></i>Download .txt</button>
+            <button data-action="retranscribe"><i data-icon="refresh"></i>Re-transcribe audio</button>
+            <button data-action="delete-audio"><i data-icon="wave"></i>Delete saved audio</button>
+            <hr>
+            <button data-action="delete" class="danger"><i data-icon="trash"></i>Delete transcript</button>
+          </div>
+        </div>
+      </div>
+      <div id="progress" class="progress" hidden><div class="progress-bar"></div></div>
+    </header>
+
+    <section id="doc" class="doc">
+      <div id="banner" class="banner" hidden></div>
+      <div id="empty" class="empty" hidden>
+        <button id="big-mic" class="big-mic" title="Start dictating"><i data-icon="mic"></i></button>
+        <h2>Start dictating</h2>
+        <p>Click the mic or press <kbd>Ctrl</kbd> <kbd>Space</kbd>.<br>Drop an audio file anywhere to transcribe it.</p>
+      </div>
+      <div id="live" class="transcript live" hidden><span id="stable"></span><span id="pending" class="pending"></span><span class="caret"></span></div>
+      <textarea id="editor" class="transcript" spellcheck="true" hidden></textarea>
+    </section>
+
+    <div class="dock-wrap">
+      <div class="dock">
+        <label class="select" title="Microphone">
+          <i data-icon="mic"></i><select id="mic"></select><i data-icon="chevron" class="chev"></i>
+        </label>
+        <label class="select lang" title="Language">
+          <i data-icon="globe"></i><select id="lang"></select><i data-icon="chevron" class="chev"></i>
+        </label>
+        <button id="rec-btn" class="rec-btn" disabled><span class="rec-dot"></span><span class="rec-label">Record</span></button>
+        <div class="rec-info">
+          <span id="timer" class="timer">0:00</span>
+          <span class="meter" id="meter"><i></i><i></i><i></i><i></i><i></i></span>
+          <span id="rec-state" class="rec-state"></span>
+        </div>
+        <button id="para-btn" class="icon-btn" title="New paragraph (Enter)" hidden><i data-icon="pilcrow"></i></button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="drop" class="drop" hidden><div><i data-icon="upload"></i><p>Drop audio to transcribe</p></div></div>
+
+<dialog id="settings" class="dialog">
+  <form method="dialog">
+    <header><h3>Settings</h3><button class="icon-btn" value="close" title="Close"><i data-icon="x"></i></button></header>
+    <div class="dialog-body">
+      <section>
+        <h4>Transcription</h4>
+        <label class="row"><span>Default language<small>Qwen3-ASR doesn't support Serbian (yet).</small></span>
+          <select data-setting="language" id="set-language"></select></label>
+        <label class="row col"><span>Vocabulary<small>Names, products and jargon it should recognize, e.g. "Kubernetes, Figma, Postgres". Keep it short.</small></span>
+          <textarea data-setting="context" rows="3" placeholder="Kubernetes, Figma, Postgres"></textarea></label>
+        <label class="row"><span>Clean up fillers &amp; stutters<small>Drops "um"/"uh" and repeats like "the the".</small></span>
+          <input type="checkbox" class="switch" data-setting="remove_fillers"></label>
+      </section>
+      <section>
+        <h4>Live dictation</h4>
+        <label class="row"><span>Pause that finalizes text<small>Shorter is snappier; longer keeps more context together.</small></span>
+          <span class="range"><input type="range" min="400" max="1500" step="50" data-setting="pause_ms"><output></output></span></label>
+        <label class="row"><span>New paragraph after a pause of<small>Or press Enter while recording.</small></span>
+          <select data-setting="paragraph_after_s">
+            <option value="0">Never</option><option value="3">3 seconds</option><option value="5">5 seconds</option>
+            <option value="8">8 seconds</option><option value="15">15 seconds</option></select></label>
+        <label class="row"><span>Copy transcript when you stop</span>
+          <input type="checkbox" class="switch" data-setting="copy_on_stop"></label>
+      </section>
+      <section>
+        <h4>Microphone</h4>
+        <label class="row"><span>Noise suppression</span><input type="checkbox" class="switch" data-setting="noise_suppression"></label>
+        <label class="row"><span>Automatic gain</span><input type="checkbox" class="switch" data-setting="auto_gain"></label>
+        <label class="row"><span>Echo cancellation<small>Only useful if speakers play while you talk.</small></span>
+          <input type="checkbox" class="switch" data-setting="echo_cancellation"></label>
+      </section>
+      <section>
+        <h4>Storage &amp; appearance</h4>
+        <label class="row"><span>Keep audio recordings<small>Needed to re-transcribe later. Stored in the data folder.</small></span>
+          <input type="checkbox" class="switch" data-setting="keep_audio"></label>
+        <label class="row"><span>Theme</span>
+          <select data-setting="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+      </section>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="confirm" class="dialog small">
+  <form method="dialog">
+    <div class="dialog-body"><h3 id="confirm-title"></h3><p id="confirm-text"></p></div>
+    <footer><button class="btn" value="cancel">Cancel</button><button id="confirm-ok" class="btn primary" value="ok">OK</button></footer>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status"></div>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

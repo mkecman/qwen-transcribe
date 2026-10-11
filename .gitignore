@@ -1,0 +1,8 @@
+env/
+models/
+data/
+.cache/
+__pycache__/
+*.mp3
+# machine-specific shortcut (absolute paths)
+*.lnk
