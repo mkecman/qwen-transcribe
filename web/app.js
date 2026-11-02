@@ -115,20 +115,27 @@ async function pollStatus() {
   setTimeout(pollStatus, state.status.status === 'ready' ? 15000 : 1200);
 }
 
+// macOS uses Ctrl+Space to switch input sources, so the Mac shortcut is Option+Space
+// (Ctrl+Space still works when the system leaves it to the browser).
+const IS_MAC = /Mac/.test(navigator.platform || navigator.userAgent);
+const SHORTCUT = IS_MAC ? '⌥ Space' : 'Ctrl+Space';
+const isRecordShortcut = (e) => e.code === 'Space' && (e.ctrlKey || (IS_MAC && e.altKey && !e.metaKey));
+
 let languagesRendered = false;
 function renderStatus() {
   const st = state.status || {};
   const el = $('#status');
   el.className = `status ${st.status === 'ready' ? 'ready' : st.status === 'loading' ? 'loading' : 'error'}`;
   const text = {
-    ready: `Ready · ${(st.device || 'GPU').replace('NVIDIA GeForce ', '')}`,
+    ready: `Ready · ${(st.device || 'GPU').replace('NVIDIA GeForce ', '').replace('Apple ', '')}`,
     loading: 'Loading model…',
     error: 'Model failed to load',
     offline: 'Server not running',
   }[st.status] || '…';
   $('.status-text', el).textContent = text;
   el.title = st.status === 'ready'
-    ? `${st.model} on ${st.device} · ${st.vram_gb} GB VRAM · ${st.fast_decoder ? 'CUDA-graph decoder' : 'standard decoder'}`
+    ? [st.model, st.device && `on ${st.device}`, st.vram_gb != null && `${st.vram_gb} GB ${IS_MAC ? 'memory' : 'VRAM'}`,
+       st.decoder || (st.fast_decoder ? 'CUDA-graph decoder' : 'standard decoder')].filter(Boolean).join(' · ')
     : (st.error || '');
   if (st.status === 'ready' && !languagesRendered && st.languages?.length) {
     languagesRendered = true;
@@ -623,7 +630,7 @@ function renderDock() {
   btn.classList.toggle('finishing', finishing);
   btn.disabled = finishing || (!rec && (!ready || isBusy(s)));
   $('.rec-label', btn).textContent = rec ? (finishing ? 'Finishing…' : 'Stop') : (s?.text ? 'Continue' : 'Record');
-  btn.title = rec ? 'Stop (Ctrl+Space)' : !ready ? 'Waiting for the model to load' : 'Start dictating (Ctrl+Space)';
+  btn.title = rec ? `Stop (${SHORTCUT})` : !ready ? 'Waiting for the model to load' : `Start dictating (${SHORTCUT})`;
   $('#big-mic').disabled = !ready;
   $('#para-btn').hidden = !rec || finishing;
   $('#mic').disabled = !!rec;
@@ -790,7 +797,7 @@ function bind() {
 
   document.addEventListener('keydown', (e) => {
     const typing = e.target.closest?.('input, textarea, select, [contenteditable]');
-    if (e.ctrlKey && e.code === 'Space') { e.preventDefault(); toggleRecording(); return; }
+    if (isRecordShortcut(e)) { e.preventDefault(); toggleRecording(); return; }
     if (e.key === 'Enter' && state.rec && !typing && !e.ctrlKey) { e.preventDefault(); $('#para-btn').click(); }
   });
 
@@ -818,6 +825,7 @@ function bind() {
 
 async function init() {
   paintIcons();
+  if (IS_MAC) document.querySelectorAll('.shortcut').forEach((el) => { el.innerHTML = '<kbd>⌥</kbd> <kbd>Space</kbd>'; });
   bind();
   try { state.settings = await api('/api/settings'); } catch { state.settings = {}; }
   applyTheme();

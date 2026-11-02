@@ -1,0 +1,13 @@
+# macOS (Apple Silicon). Rebuild the environment (from the project folder):
+#   /opt/homebrew/bin/python3.12 -m venv env && env/bin/pip install -r requirements-mac.txt
+# Needs ffmpeg on the PATH (brew install ffmpeg).
+torch==2.14.1
+mlx-qwen3-asr==0.4.4
+silero-vad==6.2.3
+fastapi==0.143.0
+uvicorn[standard]==0.54.0
+websockets==17.2
+soundfile==0.14.0
+numpy==2.5.4
+# file uploads; on Windows it arrives through qwen-asr's dependencies
+python-multipart==0.0.33

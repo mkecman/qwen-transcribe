@@ -1,9 +1,16 @@
 import os
 import shutil
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# "cuda" (Windows/Linux, NVIDIA GPU) or "mlx" (macOS, Apple Silicon)
+BACKEND = os.environ.get("QT_BACKEND", "mlx" if sys.platform == "darwin" else "cuda")
+MODEL_ID = "Qwen/Qwen3-ASR-1.7B"
 MODEL_PATH = Path(os.environ.get("QT_MODEL_PATH", ROOT / "models" / "Qwen3-ASR-1.7B"))
+# MLX only: small model that speeds up decoding without changing the text ("none" = off)
+DRAFT_MODEL = os.environ.get("QT_DRAFT_MODEL", "moona3k/mlx-qwen3-asr-0.6b-4bit")
+DRAFT_MODEL = "" if DRAFT_MODEL.lower() == "none" else DRAFT_MODEL
 DATA_DIR = Path(os.environ.get("QT_DATA_DIR", ROOT / "data"))
 DB_PATH = DATA_DIR / "transcribe.db"
 AUDIO_DIR = DATA_DIR / "audio"

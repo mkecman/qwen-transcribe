@@ -1,5 +1,8 @@
 """Qwen3-ASR inference: model loading, a CUDA-graph greedy decoder, and one GPU worker thread.
 
+On macOS the model runs through MLX instead (mlx_backend.py); the worker thread and the
+priority queue are the same.
+
 All GPU work runs on a single thread, pulled from a priority queue, so live dictation
 (finals, then partials) always jumps ahead of file transcription.
 """
@@ -153,6 +156,7 @@ class Engine:
         self.languages: list[str] = []
         self.asr = None
         self.decoder: Optional[GraphDecoder] = None
+        self.mlx = None  # MLXBackend on macOS
         self._queue: "queue.PriorityQueue" = queue.PriorityQueue()
         self._seq = itertools.count()
         self._thread = threading.Thread(target=self._run, name="gpu-worker", daemon=True)
@@ -181,6 +185,14 @@ class Engine:
 
     def _load(self):
         t0 = time.time()
+        if config.BACKEND == "mlx":
+            from .mlx_backend import MLXBackend
+            self.mlx = MLXBackend()
+            self.languages = self.mlx.languages
+            self.fast_decoder = self.mlx.draft is not None
+            self._transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32), "English", "")
+            log.info("Model ready in %.1fs (%s)", time.time() - t0, self.mlx.decoder_name)
+            return
         from qwen_asr import Qwen3ASRModel
         from qwen_asr.inference.utils import SUPPORTED_LANGUAGES
 
@@ -217,6 +229,8 @@ class Engine:
     def _transcribe(self, wav: np.ndarray, language: Optional[str], context: str,
                     continue_from: str = "", new_s: Optional[float] = None,
                     rollback: int = 5) -> tuple[str, str, str]:
+        if self.mlx is not None:
+            return self.mlx.transcribe(wav, language, context, continue_from, new_s, rollback)
         from qwen_asr.inference.utils import detect_and_fix_repetitions, parse_asr_output
 
         language = language if language in self.languages else None
@@ -260,9 +274,12 @@ class Engine:
     def info(self) -> dict:
         d = {"status": self.status, "error": self.error, "fast_decoder": self.fast_decoder,
              "languages": self.languages, "model": config.MODEL_PATH.name}
-        if torch.cuda.is_available():
+        if self.mlx is not None:
+            d.update(self.mlx.info(), decoder=self.mlx.decoder_name)
+        elif torch.cuda.is_available():
             d["device"] = torch.cuda.get_device_name(0)
             d["vram_gb"] = round(torch.cuda.memory_allocated(0) / 1e9, 1)
+            d["decoder"] = "CUDA-graph decoder" if self.fast_decoder else "standard decoder"
         return d
 
 
