@@ -1,3 +1,4 @@
+import os
 import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,7 +18,8 @@ from .serialize import full, summary
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    torch.set_num_threads(1)  # Silero VAD is fastest single-threaded; the model runs on the GPU
+    # Silero VAD is fastest single-threaded; when the model itself runs on the CPU it needs more
+    torch.set_num_threads(1 if config.BACKEND in ("cuda", "mlx") else min(16, os.cpu_count() or 1))
     db.init()
     engine.start()
     jobs.start()

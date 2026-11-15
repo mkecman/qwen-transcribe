@@ -47,9 +47,30 @@ env/bin/hf download moona3k/mlx-qwen3-asr-0.6b-4bit
 
 Then run `start.command`.
 
+### Linux (Ubuntu 24.04 LTS)
+
+You need Ubuntu 24.04+, Python 3.12 or 3.13, and ~12 GB of disk. For speed you also want an NVIDIA GPU with its driver (check with `nvidia-smi`; the 40- and 50-series need a recent driver for CUDA 12.8) and ~6 GB of free VRAM. Without a GPU the app still runs, on the CPU (much slower). Run these in a terminal:
+
+```bash
+git clone https://github.com/mkecman/qwen-transcribe.git
+cd qwen-transcribe
+
+# 1. Python 3.12 + ffmpeg
+sudo apt install python3.12-venv ffmpeg
+
+# 2. Python packages (PyTorch with CUDA 12.8, Qwen3-ASR, Silero VAD, FastAPI) in env/
+python3.12 -m venv env
+env/bin/pip install -r requirements-linux.txt
+
+# 3. The model (~4.4 GB) into models/Qwen3-ASR-1.7B
+env/bin/python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-ASR-1.7B', local_dir='models/Qwen3-ASR-1.7B')"
+```
+
+Then run `./start.sh`. If it finds no usable GPU it starts with the CPU backend instead and says so; `QT_BACKEND=cuda` forces the GPU, `QT_BACKEND=cpu` forces the CPU.
+
 ## Start
 
-Double-click **`start.bat`** (Windows) or **`start.command`** (macOS). It loads the model (~10 s on Windows, ~3 s on an M5 Pro) and opens http://127.0.0.1:8765 in your browser. Close the console window to stop it.
+Double-click **`start.bat`** (Windows) or **`start.command`** (macOS), or run **`start.sh`** (Linux). It loads the model (~10 s on Windows, ~3 s on an M5 Pro) and opens http://127.0.0.1:8765 in your browser. Close the console window to stop it.
 
 ## Use
 
@@ -74,7 +95,7 @@ Double-click **`start.bat`** (Windows) or **`start.command`** (macOS). It loads 
 
 | Folder | Contents |
 |---|---|
-| `env/` | Windows: conda environment (Python 3.12, PyTorch 2.9.1 CUDA 12.8, ffmpeg). macOS: Python venv (MLX, PyTorch for Silero VAD) |
+| `env/` | Windows: conda environment (Python 3.12, PyTorch 2.9.1 CUDA 12.8, ffmpeg). macOS: Python venv (MLX, PyTorch for Silero VAD). Linux: Python venv (PyTorch CUDA 12.8, Qwen3-ASR) |
 | `models/` | model weights (4.4 GB). On macOS the models stay in the Hugging Face cache unless you put them here |
 | `data/` | `transcribe.db` (SQLite: transcripts and settings) and `audio/` (saved recordings) |
 | `.cache/` | pip, conda and Hugging Face download caches. Safe to delete |
@@ -86,8 +107,8 @@ On Windows, deleting the project folder removes everything; nothing is installed
 - **Serbian is not supported** by Qwen3-ASR. The language list in the app is what the model supports (30 languages, plus auto-detect).
 - The vocabulary setting is passed to the model as context. It fixes spellings of names and jargon (e.g. "tepesquite" became "Tepezcohuite" once that word was listed), but keep it to a short list of terms: long text there can leak into the transcript.
 - The server listens on `127.0.0.1` only, and rejects writes coming from other websites.
-- Environment variables: `QT_PORT` (default 8765), `QT_DATA_DIR`, `QT_MODEL_PATH`, `QT_BACKEND` (`cuda` or `mlx`, picked by platform), `QT_DRAFT_MODEL` (macOS, `none` turns speculative decoding off).
-- Linux should work too (`env/bin/python -m app`; it falls back to the system `ffmpeg`), but it's untested.
+- Environment variables: `QT_PORT` (default 8765), `QT_DATA_DIR`, `QT_MODEL_PATH`, `QT_BACKEND` (`cuda`, `cpu`, or `mlx`; picked by platform unless set), `QT_DRAFT_MODEL` (macOS, `none` turns speculative decoding off).
+- On Linux the mic needs a browser that can capture audio (PulseAudio or PipeWire behind it); file transcription works headless.
 
 ## Credits
 

@@ -1,7 +1,8 @@
-"""Qwen3-ASR inference: model loading, a CUDA-graph greedy decoder, and one GPU worker thread.
+"""Qwen3-ASR inference: model loading, a CUDA-graph greedy decoder, and one worker thread.
 
-On macOS the model runs through MLX instead (mlx_backend.py); the worker thread and the
-priority queue are the same.
+The model runs on the NVIDIA GPU (QT_BACKEND=cuda, default on Windows and Linux), on the
+CPU (QT_BACKEND=cpu), or on macOS through MLX instead (mlx_backend.py); the worker thread
+and the priority queue are the same.
 
 All GPU work runs on a single thread, pulled from a priority queue, so live dictation
 (finals, then partials) always jumps ahead of file transcription.
@@ -193,21 +194,33 @@ class Engine:
             self._transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32), "English", "")
             log.info("Model ready in %.1fs (%s)", time.time() - t0, self.mlx.decoder_name)
             return
+        if config.BACKEND == "cuda":
+            if not torch.cuda.is_available():
+                raise RuntimeError(
+                    "CUDA is not available. Check that the NVIDIA driver is running "
+                    "(nvidia-smi) and the GPU has ~6 GB of free VRAM, or set "
+                    "QT_BACKEND=cpu to transcribe on the CPU (much slower).")
+            device, dtype = "cuda:0", torch.bfloat16
+        elif config.BACKEND == "cpu":
+            device, dtype = "cpu", torch.float32
+        else:
+            raise ValueError(f"Unknown QT_BACKEND {config.BACKEND!r} (use cuda, cpu or mlx)")
         from qwen_asr import Qwen3ASRModel
         from qwen_asr.inference.utils import SUPPORTED_LANGUAGES
 
         self.languages = list(SUPPORTED_LANGUAGES)
-        log.info("Loading %s", config.MODEL_PATH)
+        log.info("Loading %s (%s)", config.MODEL_PATH, device)
         self.asr = Qwen3ASRModel.from_pretrained(
-            str(config.MODEL_PATH), dtype=torch.bfloat16, device_map="cuda:0",
+            str(config.MODEL_PATH), dtype=dtype, device_map=device,
             max_inference_batch_size=8, max_new_tokens=512,
         )
-        try:
-            decoder = GraphDecoder(self.asr)
-            decoder.capture()
-            self.decoder, self.fast_decoder = decoder, True
-        except Exception:
-            log.exception("CUDA graph decoder unavailable, falling back to standard generation")
+        if device.startswith("cuda"):
+            try:
+                decoder = GraphDecoder(self.asr)
+                decoder.capture()
+                self.decoder, self.fast_decoder = decoder, True
+            except Exception:
+                log.exception("CUDA graph decoder unavailable, falling back to standard generation")
         # warm-up so the first real request is fast
         self._transcribe(np.zeros(SAMPLE_RATE, dtype=np.float32), "English", "")
         log.info("Model ready in %.1fs (fast decoder: %s)", time.time() - t0, self.fast_decoder)
@@ -276,10 +289,13 @@ class Engine:
              "languages": self.languages, "model": config.MODEL_PATH.name}
         if self.mlx is not None:
             d.update(self.mlx.info(), decoder=self.mlx.decoder_name)
-        elif torch.cuda.is_available():
+        elif config.BACKEND == "cuda" and torch.cuda.is_available():
             d["device"] = torch.cuda.get_device_name(0)
             d["vram_gb"] = round(torch.cuda.memory_allocated(0) / 1e9, 1)
             d["decoder"] = "CUDA-graph decoder" if self.fast_decoder else "standard decoder"
+        elif config.BACKEND == "cpu":
+            d["device"] = "CPU"
+            d["decoder"] = "standard decoder"
         return d
 
 
