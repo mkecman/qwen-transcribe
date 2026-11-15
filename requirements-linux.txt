@@ -1,0 +1,19 @@
+# Linux (Ubuntu 24.04+). Rebuild the environment (from the project folder):
+#   python3.12 -m venv env && env/bin/pip install -r requirements-linux.txt
+# Needs Python 3.12 or 3.13 and ffmpeg on the PATH (sudo apt install ffmpeg).
+# PyTorch is built for CUDA 12.8, which the RTX 50-series and 40-series need (and up).
+# On a machine without an NVIDIA GPU, set QT_BACKEND=cpu (the start.sh script does this automatically).
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.9.1+cu128
+torchaudio==2.9.1+cu128
+qwen-asr==0.0.6
+transformers==4.57.6
+accelerate==1.12.0
+silero-vad==6.2.3
+fastapi==0.143.0
+uvicorn[standard]==0.54.0
+websockets==17.2
+soundfile==0.14.0
+numpy==2.5.4
+# file uploads; on Windows it arrives through qwen-asr's dependencies
+python-multipart==0.0.33

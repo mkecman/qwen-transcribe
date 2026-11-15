@@ -4,8 +4,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-# "cuda" (Windows/Linux, NVIDIA GPU) or "mlx" (macOS, Apple Silicon)
-BACKEND = os.environ.get("QT_BACKEND", "mlx" if sys.platform == "darwin" else "cuda")
+# "cuda" (NVIDIA GPU; default on Windows and Linux), "cpu", or "mlx" (macOS, Apple Silicon)
+BACKEND = os.environ.get("QT_BACKEND", "mlx" if sys.platform == "darwin" else "cuda").lower()
 MODEL_ID = "Qwen/Qwen3-ASR-1.7B"
 MODEL_PATH = Path(os.environ.get("QT_MODEL_PATH", ROOT / "models" / "Qwen3-ASR-1.7B"))
 # MLX only: small model that speeds up decoding without changing the text ("none" = off)
